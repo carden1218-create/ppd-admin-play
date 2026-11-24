@@ -4577,6 +4577,7 @@ window.__PETTD__ = {
         }
       }
       save.tutorialDone = true;
+      try { if (typeof ensureCartMax27 === "function") ensureCartMax27(); } catch (e) {}
       if (typeof persist === "function") persist();
     } catch (e) { try { console.warn("adminUnlockAll", e); } catch (e2) {} }
     return { pets: save.pets.length, gems: save.gems, charms: Object.keys(save.charms || {}).length };
@@ -4666,6 +4667,370 @@ window.__PETTD__ = {
     saveKey: (typeof SAVE_KEY === "string") ? SAVE_KEY : "mengchong-td-v2_admin",
     baseCommit: "9ed9c03"
   };
+})();
+
+/* ==== ADMIN: v2.7/v2.8 捕网车 (Net Cart) on a Slime tab, pre-unlocked at Lv5 ==== */
+Object.assign(STR.zh, {
+  tab_slime: "史莱姆",
+  sl25_farm: "农场", sl25_codex: "图鉴", sl25_feed: "饲料 {0}", sl25_buyfeed: "买 {0}（{1}💎）",
+  sl25_nets: "捕网", sl25_buynet: "{0}💎", sl25_empty: "还没有抓到史莱姆。开战吧，捕网车会自动去抓！",
+  sl25_owned: "已收容 {0} 种", sl25_lv: "Lv{0}",
+  cart27_t: "🛒 捕网车", cart27_lv: "Lv {0}", cart27_none: "还没有捕网车",
+  cart27_d0: "买一辆捕网车：战斗中自动用免费的网去抓血量够低的稀有史莱姆（和手动抓的规则、奖励一样）。",
+  cart27_d: "每 {0} 秒自动抓一次 · 目标：{1} · {2}",
+  cart27_buy: "购买 {0}💎", cart27_up: "升级 {0}💎", cart27_max: "已满级",
+  cart27_r: "稀有", cart27_l: "传说", cart27_s: "特别", cart27_e: "精英",
+  cart27_got: "捕网车出动！",
+  net_ok: "抓住了{0}！", net_ok_shiny: "抓住了异色{0}！", net_dup: "又抓到{0}，饲料 +{1}",
+  net_fail: "{0}挣脱了！", net_none: "没有这种网了", net_no: "这只抓不了", net_busy: "正在抓了",
+  net_hp: "先把它打到 {0}% 血以下再抓", net_hint: "把网扔到史莱姆身上"
+});
+Object.assign(STR.en, {
+  tab_slime: "Slimes",
+  sl25_farm: "Farm", sl25_codex: "Codex", sl25_feed: "Feed {0}", sl25_buyfeed: "Buy {0} ({1}💎)",
+  sl25_nets: "Nets", sl25_buynet: "{0}💎", sl25_empty: "No slimes caught yet. Start a battle — the Net Cart will catch them for you!",
+  sl25_owned: "{0} species housed", sl25_lv: "Lv{0}",
+  cart27_t: "🛒 Net Cart", cart27_lv: "Lv {0}", cart27_none: "No net cart yet",
+  cart27_d0: "Buy a Net Cart: in battle it throws a free net at low-HP rare slimes for you (same catch rules and rewards as a hand net).",
+  cart27_d: "Auto-throws every {0}s · Targets: {1} · {2}",
+  cart27_buy: "Buy {0}💎", cart27_up: "Upgrade {0}💎", cart27_max: "Max level",
+  cart27_r: "rare", cart27_l: "legendary", cart27_s: "special", cart27_e: "elite",
+  cart27_got: "Net Cart away!",
+  net_ok: "Caught {0}!", net_ok_shiny: "Caught a shiny {0}!", net_dup: "Caught another {0}, feed +{1}",
+  net_fail: "{0} wriggled free!", net_none: "No nets of that kind left", net_no: "Can't catch this one", net_busy: "Already bagging one",
+  net_hp: "Wear it down to {0}% HP first", net_hint: "Toss the net onto a slime"
+});
+
+var NET25 = { b: { ic: "🥅", mul: 1, thr: 0, col: "#d8c8a0", cost: 20 }, s: { ic: "🥈", mul: 1.35, thr: 0.05, col: "#c8d8ea", cost: 50 }, g: { ic: "🥇", mul: 2, thr: 0.10, col: "#ffd23a", cost: 120 } };
+var NET_RAR25 = { c: 0.85, r: 0.6, l: 0.35, s: 0.7, e: 0.5 };
+var FEED_COST25 = 30, FEED_PACK25 = 10, SL_MAXLV25 = 10;
+var CART27 = [null,
+  { cost: 150, every: 14, rar: "r", tier: "b" },
+  { cost: 300, every: 11, rar: "r", tier: "b" },
+  { cost: 500, every: 9, rar: "rle", tier: "s" },
+  { cost: 800, every: 7, rar: "rle", tier: "s" },
+  { cost: 1200, every: 5, rar: "rles", tier: "g" }];
+var CART_X27 = 500, CART_Y27 = 560;
+var slView25 = "farm", v25Norm = null;
+
+/* Catchable roster mapped onto this old build's enemy types (no v2.8 slime sheets here). */
+var SL25_LIST = [
+  { id: "sprout",  rar: "c", net: 0.40, typ: "sprout",  zh: "芽芽史莱姆", en: "Sprout Slime" },
+  { id: "jelly",   rar: "c", net: 0.40, typ: "jelly",   zh: "果冻史莱姆", en: "Jelly Slime" },
+  { id: "pebble",  rar: "c", net: 0.40, typ: "pebble",  zh: "石子史莱姆", en: "Pebble Slime" },
+  { id: "puff",    rar: "c", net: 0.40, typ: "puff",    zh: "气球史莱姆", en: "Puff Slime" },
+  { id: "ember",   rar: "r", net: 0.25, typ: "ember",   zh: "火花史莱姆", en: "Ember Slime" },
+  { id: "zap",     rar: "r", net: 0.25, typ: "zap",     zh: "电击史莱姆", en: "Zap Slime" },
+  { id: "split",   rar: "r", net: 0.25, typ: "split",   zh: "分裂史莱姆", en: "Split Slime" },
+  { id: "thief",   rar: "r", net: 0.25, typ: "thief",   zh: "盗贼史莱姆", en: "Thief Slime" },
+  { id: "boss1",   rar: "l", net: 0.15, typ: "boss1",   zh: "史莱姆首领", en: "Slime Boss" },
+  { id: "boss2",   rar: "l", net: 0.15, typ: "boss2",   zh: "沉重首领", en: "Heavy Boss" },
+  { id: "boss3",   rar: "l", net: 0.15, typ: "boss3",   zh: "烈焰首领", en: "Blaze Boss" },
+  { id: "bossX",   rar: "s", net: 0.15, typ: "bossX",   zh: "神秘首领", en: "Mystery Boss" }
+];
+var SL25 = {}, SL25_BY_EN = {};
+SL25_LIST.forEach(function (s) { SL25[s.id] = s; if (s.typ) SL25_BY_EN[s.typ] = s; });
+
+function slName25(id) {
+  const s = SL25[id]; if (!s) return id;
+  return (LANG === "en" ? s.en : s.zh);
+}
+function V25() {
+  let v = save.v25;
+  if (!v || typeof v !== "object") v = save.v25 = {};
+  if (v25Norm === v && v.nets && typeof v.nets === "object") return v;
+  if (!v.seen || typeof v.seen !== "object") v.seen = {};
+  if (!v.caught || typeof v.caught !== "object") v.caught = {};
+  if (!v.shinyC || typeof v.shinyC !== "object") v.shinyC = {};
+  v.farm = Array.isArray(v.farm) ? v.farm.filter(f => f && SL25[f.id]).map(f => ({ u: f.u | 0, id: f.id, lv: Math.max(1, Math.min(SL_MAXLV25, f.lv | 0 || 1)), xp: Math.max(0, f.xp | 0), sh: f.sh ? 1 : 0 })) : [];
+  v.seq = Math.max(v.seq | 0, 0, ...v.farm.map(f => f.u | 0));
+  for (const f of v.farm) if (!f.u) f.u = ++v.seq;
+  if (!v.nets || typeof v.nets !== "object") v.nets = {};
+  for (const k of ["b", "s", "g"]) v.nets[k] = Math.max(0, Math.min(99, v.nets[k] | 0));
+  v.feed = Math.max(0, v.feed | 0);
+  v.cart27 = Math.max(0, Math.min(5, v.cart27 | 0));
+  v25Norm = v;
+  return v;
+}
+function ensureCartMax27() {
+  const v = V25();
+  v.cart27 = 5;
+  v.nets.b = Math.max(v.nets.b | 0, 99);
+  v.nets.s = Math.max(v.nets.s | 0, 99);
+  v.nets.g = Math.max(v.nets.g | 0, 99);
+  v.feed = Math.max(v.feed | 0, 9999);
+  return v;
+}
+function cartLv27() { try { return Math.max(0, Math.min(5, V25().cart27 | 0)); } catch (e) { return 0; } }
+function slimeRarOf(e) {
+  if (e && e.elite27) return "e";
+  const s = e && SL25_BY_EN[e.typ];
+  return s ? s.rar : "";
+}
+function netThr25(e, tier) {
+  const s = SL25_BY_EN[e && e.typ]; if (!s) return 0;
+  const base = e.elite27 ? 0.20 : s.net;
+  return base + (NET25[tier] ? NET25[tier].thr : 0);
+}
+function canNet25(e, tier) {
+  const s = e && SL25_BY_EN[e.typ];
+  if (!s || e.hp <= 0 || e.typ === "splitling") return "no";
+  if (e.netT25 > 0) return "busy";
+  if (e.hp / e.max > netThr25(e, tier)) return "hp";
+  return "";
+}
+function addSlime25(id, shiny) {
+  const v = V25(); v.seen[id] = 1;
+  const have = v.farm.find(f => f.id === id);
+  if (have) { const fd = (SL25[id] && (SL25[id].rar === "l" || SL25[id].rar === "s")) ? 15 : 5; v.feed += fd; if (shiny && !have.sh) { have.sh = 1; v.shinyC[id] = 1; } persist(); return { dup: true, fd }; }
+  const f = { u: ++v.seq, id, lv: 1, xp: 0, sh: shiny ? 1 : 0 };
+  v.farm.push(f); v.caught[id] = 1; if (shiny) v.shinyC[id] = 1;
+  persist(); return { f };
+}
+function resolveNet25(e) {
+  const s = SL25_BY_EN[e.typ], tier = e.netTier25 || "b"; if (!s) return;
+  const ch = Math.min(0.98, (NET_RAR25[slimeRarOf(e)] || NET_RAR25[s.rar] || 0.6) * (NET25[tier] ? NET25[tier].mul : 1));
+  if (Math.random() < ch || B.forceCatch25) {
+    e.hp = 0; e.captured25 = true;
+    const shiny = Math.random() < (tier === "g" ? 0.16 : 0.08) || !!B.forceShiny25;
+    const r = addSlime25(s.id, shiny);
+    const v = V25(); v.feed += 2; persist();
+    B.caught25 = (B.caught25 | 0) + 1;
+    B.fx.push({ typ: "cap25", x: e.x, y: e.y, id: s.id, sh: shiny, life: 1.3, max: 1.3 });
+    try { burst(e.x, e.y - 30, "#ffe14a", 20); burst(e.x, e.y - 30, "#7fe07a", 12); } catch (er) {}
+    showToast(r.dup ? tr("net_dup", slName25(s.id), r.fd) : tr(shiny ? "net_ok_shiny" : "net_ok", slName25(s.id)), 2.6);
+    try { sfx.shiny(); } catch (er) { try { sfx.click(); } catch (e2) {} }
+  } else {
+    e.netT25 = 0; e.stunT = 0;
+    try { burst(e.x, e.y - 20, "#d8c8a0", 14); } catch (er) {}
+    B.floaters.push({ x: e.x, y: e.y - 70, text: tr("net_fail", slName25(s.id)), color: "#ffb0b0", life: 1.3, max: 1.3, big: true });
+  }
+}
+function tickCart27(dt) {
+  const lv = cartLv27(); if (!lv || !B || !B.running || B.over || !B.enemies) return;
+  const L = CART27[lv]; if (B.cartT27 == null) B.cartT27 = L.every * 0.5;
+  B.cartT27 -= dt; if (B.cartFx27) { B.cartFx27.life -= dt; if (B.cartFx27.life <= 0) B.cartFx27 = null; }
+  if (B.cartT27 > 0) return;
+  const t = B.enemies.filter(e => {
+    const rar = slimeRarOf(e);
+    return rar && L.rar.indexOf(rar) >= 0 && e.y > FIELD_TOP + 10 && canNet25(e, L.tier) === "";
+  }).sort((a, b) => b.y - a.y)[0];
+  if (!t) { B.cartT27 = 0.5; return; }
+  t.netT25 = 0.8; t.netTier25 = L.tier; t.stunT = Math.max(t.stunT || 0, 0.85);
+  B.fx.push({ typ: "net25", x: t.x, y: t.y, tier: L.tier, e: t, life: 0.8, max: 0.8 });
+  B.cartFx27 = { x2: t.x, y2: t.y - 20, life: 0.45, max: 0.45 }; B.cartN27 = (B.cartN27 | 0) + 1;
+  B.floaters.push({ x: CART_X27, y: CART_Y27 - 50, text: tr("cart27_got"), color: "#ffe14a", life: 1.0, max: 1.0 });
+  try { sfx.click(); } catch (e) {}
+  B.cartT27 = L.every;
+}
+function drawCart27(c) {
+  const lv = cartLv27(); if (!lv || !B || !B.level) return;
+  const x = CART_X27, y = CART_Y27, L = CART27[lv];
+  F(c, cc => cc.roundRect(x - 24, y - 22, 48, 26, 7), "#ffb347", 3);
+  F(c, cc => { cc.moveTo(x - 20, y - 22); cc.quadraticCurveTo(x, y - 48, x + 20, y - 22); cc.closePath(); }, "#fff3c8", 2.5);
+  c.strokeStyle = OL; c.lineWidth = 1.5; for (let i = -1; i <= 1; i++) { c.beginPath(); c.moveTo(x + i * 9, y - 22); c.lineTo(x + i * 5, y - 38); c.stroke(); }
+  E(c, x - 13, y + 6, 7, 7, "#8c6a4a", { lw: 2.5, hl: false }); E(c, x + 13, y + 6, 7, 7, "#8c6a4a", { lw: 2.5, hl: false });
+  c.font = "900 12px sans-serif"; c.textAlign = "center"; c.lineWidth = 3; c.strokeStyle = OL; c.strokeText("Lv" + lv, x, y - 4); c.fillStyle = "#fff"; c.fillText("Lv" + lv, x, y - 4);
+  const p = B.cartT27 == null ? 0 : 1 - Math.max(0, B.cartT27) / L.every;
+  c.strokeStyle = "#ffe14a"; c.lineWidth = 3; c.beginPath(); c.arc(x, y - 10, 32, -Math.PI / 2, -Math.PI / 2 + TAU * Math.max(0, Math.min(1, p))); c.stroke();
+  const f = B.cartFx27; if (f) { c.save(); c.globalAlpha = f.life / f.max; c.setLineDash([5, 6]); c.strokeStyle = "#fff3c8"; c.lineWidth = 3; c.beginPath(); c.moveTo(x, y - 30); c.quadraticCurveTo((x + f.x2) / 2, Math.min(y, f.y2) - 80, f.x2, f.y2); c.stroke(); c.setLineDash([]); c.restore(); }
+}
+function drawNetFx25(c) {
+  for (const f of (B.fx || [])) {
+    const a = f.life / (f.max || 1);
+    if (f.typ === "net25") {
+      const x = (f.e && f.e.x) || f.x, y = (f.e && f.e.y) || f.y;
+      c.save(); c.globalAlpha = Math.min(1, a * 1.2);
+      c.strokeStyle = (NET25[f.tier] || NET25.g).col; c.lineWidth = 4;
+      c.beginPath(); c.ellipse(x, y - 18, 28 * (1.15 - a * 0.15), 20 * (1.15 - a * 0.15), 0, 0, TAU); c.stroke();
+      c.font = "28px sans-serif"; c.textAlign = "center"; c.fillText((NET25[f.tier] || NET25.g).ic, x, y - 8);
+      c.restore();
+    } else if (f.typ === "cap25") {
+      c.save(); c.globalAlpha = a; c.font = "900 16px sans-serif"; c.textAlign = "center";
+      c.strokeStyle = OL; c.lineWidth = 4; const t = slName25(f.id);
+      c.strokeText((f.sh ? "✦ " : "") + t, f.x, f.y - 40 - (1 - a) * 20);
+      c.fillStyle = f.sh ? "#ffb0e8" : "#ffe14a"; c.fillText((f.sh ? "✦ " : "") + t, f.x, f.y - 40 - (1 - a) * 20);
+      c.restore();
+    }
+  }
+}
+
+function renderSlimeTab25(body) {
+  const v = V25(), lv = cartLv27(), nx = CART27[lv + 1];
+  const top = document.createElement("div"); top.className = "box sl25-top";
+  top.innerHTML = "<div class='sl25-seg'><button type='button' data-v='farm' class='" + (slView25 === "farm" ? "on" : "") + "'>🏡 " + tr("sl25_farm") + "</button><button type='button' data-v='codex' class='" + (slView25 === "codex" ? "on" : "") + "'>📖 " + tr("sl25_codex") + "</button></div>"
+    + "<div class='sl25-res'><span>" + tr("sl25_feed", v.feed) + "</span><button type='button' class='mini b-gold' id='sl25-buyfeed'>" + tr("sl25_buyfeed", FEED_PACK25, FEED_COST25) + "</button></div>"
+    + "<div class='sl25-res'><b>" + tr("sl25_nets") + "</b>" + ["b", "s", "g"].map(k => "<span class='sl25-net'>" + NET25[k].ic + " " + (v.nets[k] | 0) + " <button type='button' class='mini b-sky' data-net='" + k + "'>" + tr("sl25_buynet", NET25[k].cost) + "</button></span>").join("") + "</div>";
+  body.appendChild(top);
+  top.querySelectorAll(".sl25-seg button").forEach(b => b.onclick = () => { try { sfx.click(); } catch (e) {} slView25 = b.dataset.v; renderHome(); });
+  const bf = el("sl25-buyfeed"); if (bf) { bf.disabled = save.gems < FEED_COST25; bf.onclick = () => { if (save.gems < FEED_COST25) return; save.gems -= FEED_COST25; v.feed += FEED_PACK25; persist(); try { sfx.click(); } catch (e) {} renderHome(); }; }
+  top.querySelectorAll("button[data-net]").forEach(b => { const k = b.dataset.net; b.disabled = save.gems < NET25[k].cost || v.nets[k] >= 99;
+    b.onclick = () => { if (save.gems < NET25[k].cost) return; save.gems -= NET25[k].cost; v.nets[k]++; persist(); try { sfx.click(); } catch (e) {} renderHome(); }; });
+
+  const box = document.createElement("div"); box.className = "box sl25-res cart27"; box.id = "cart27-box";
+  const tg = lv ? CART27[lv].rar.split("").map(r => tr("cart27_" + r)).join(" / ") : "";
+  box.innerHTML = "<b>" + tr("cart27_t") + (lv ? " " + tr("cart27_lv", lv) : "") + "</b><small style='flex:1 1 220px'>" + (lv ? tr("cart27_d", CART27[lv].every, tg, NET25[CART27[lv].tier].ic) : tr("cart27_d0")) + "</small>";
+  const btn = document.createElement("button"); btn.type = "button"; btn.className = "mini b-gold"; btn.id = "cart27-up";
+  if (!nx) { btn.textContent = tr("cart27_max"); btn.disabled = true; }
+  else { btn.textContent = tr(lv ? "cart27_up" : "cart27_buy", nx.cost); btn.disabled = save.gems < nx.cost;
+    btn.onclick = () => { if (save.gems < nx.cost) return; save.gems -= nx.cost; v.cart27 = lv + 1; persist(); try { sfx.click(); } catch (e) {} renderHome(); }; }
+  box.appendChild(btn);
+  body.appendChild(box);
+
+  const list = slView25 === "codex" ? SL25_LIST : v.farm;
+  if (slView25 === "farm") {
+    const hd = document.createElement("div"); hd.className = "box"; hd.innerHTML = "<b>" + tr("sl25_owned", Object.keys(v.caught).length) + "</b>"; body.appendChild(hd);
+    if (!v.farm.length) { const empty = document.createElement("div"); empty.className = "box"; empty.textContent = tr("sl25_empty"); body.appendChild(empty); }
+  }
+  const grid = document.createElement("div"); grid.className = "sl25-grid";
+  const rows = slView25 === "codex" ? SL25_LIST : v.farm;
+  rows.forEach(row => {
+    const id = row.id, known = !!v.caught[id] || slView25 === "farm";
+    const card = document.createElement("div"); card.className = "sl25-card" + (row.sh ? " sh" : "") + (known ? "" : " unseen");
+    const rar = (SL25[id] && SL25[id].rar) || "";
+    card.innerHTML = "<b>" + (known ? slName25(id) : "???") + "</b><small>" + (rar ? tr("cart27_" + rar) : "") + (slView25 === "farm" ? " · " + tr("sl25_lv", row.lv || 1) : "") + (row.sh ? " ✦" : "") + "</small>";
+    grid.appendChild(card);
+  });
+  body.appendChild(grid);
+}
+
+/* hooks — do not rewrite the old base, only wrap */
+(function hookCart27() {
+  const _persist = persist;
+  persist = function () {
+    _persist();
+    try {
+      const raw = localStorage.getItem(SAVE_KEY);
+      if (!raw) return;
+      const d = JSON.parse(raw);
+      d.v25 = save.v25 || null;
+      localStorage.setItem(SAVE_KEY, JSON.stringify(d));
+    } catch (e) {}
+  };
+  if (typeof snapshotSave === "function") {
+    const _snap = snapshotSave;
+    snapshotSave = function () { const d = _snap(); try { d.v25 = save.v25 || null; } catch (e) {} return d; };
+  }
+  if (window.__PETTD__ && typeof window.__PETTD__.getSave === "function") {
+    const _gs = window.__PETTD__.getSave;
+    window.__PETTD__.getSave = function () {
+      const d = _gs();
+      try { d.v25 = JSON.parse(JSON.stringify(V25())); } catch (e) {}
+      return d;
+    };
+  }
+  const _apply = applySave;
+  applySave = function (d) {
+    const r = _apply(d);
+    try { if (d && d.v25 && typeof d.v25 === "object") { save.v25 = d.v25; v25Norm = null; V25(); } } catch (e) {}
+    try { ensureCartMax27(); } catch (e) {}
+    return r;
+  };
+  const _new = newGame;
+  newGame = function (starterId) {
+    const r = _new(starterId);
+    try { ensureCartMax27(); persist(); } catch (e) {}
+    return r;
+  };
+  const _rh = renderHome;
+  renderHome = function () {
+    if (homeTab === "slime") {
+      try { el("home-gems").textContent = tr("gems", save.gems); } catch (e) {}
+      if (el("home-power")) try { el("home-power").textContent = "⚔ " + fmtPower(teamPower(save.pets)); } catch (e) {}
+      document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === homeTab));
+      const body = el("home-body"); body.innerHTML = "";
+      renderSlimeTab25(body);
+      body.classList.toggle("fit", true);
+      body.dataset.tab = "slime";
+      return;
+    }
+    _rh();
+  };
+  const _ub = updateBattle;
+  updateBattle = function (dt) {
+    _ub(dt);
+    if (!B || !B.running || B.paused || B.over) return;
+    const stepped = dt * (B.speed || 1);
+    for (const e of B.enemies) {
+      if (e.netT25 > 0) {
+        e.netT25 -= stepped;
+        if (e.netT25 <= 0) resolveNet25(e);
+      }
+    }
+    tickCart27(stepped);
+  };
+  const _rb = renderBattle;
+  renderBattle = function () {
+    _rb();
+    try { if (screen === "battle" || (B && B.level)) { drawCart27(ctx); drawNetFx25(ctx); } } catch (e) {}
+  };
+  const _sp = spawnEnemy;
+  spawnEnemy = function (g) {
+    const before = B.enemies.length;
+    const r = _sp(g);
+    try {
+      const e = B.enemies[B.enemies.length - 1];
+      if (e && B.enemies.length > before && SL25_BY_EN[e.typ] && SL25_BY_EN[e.typ].rar === "r" && Math.random() < 0.18) {
+        e.elite27 = 1;
+        e.hp = e.max = e.max * 1.35;
+      }
+    } catch (er) {}
+    return r;
+  };
+  const _kill = killEnemy;
+  killEnemy = function (e) {
+    if (e && e.captured25) { e.hp = 0; return; }
+    return _kill(e);
+  };
+})();
+
+(function cartUi27() {
+  const css = document.createElement("style");
+  css.textContent = [
+    ".tabs{grid-template-columns:repeat(7,1fr)!important;gap:4px}",
+    ".tabs button{font-size:13px!important}",
+    ".sl25-top .sl25-seg{display:flex;gap:8px;margin-bottom:8px}",
+    ".sl25-seg button{flex:1;padding:8px;border-radius:14px;background:#fff3d6;font-weight:900}",
+    ".sl25-seg button.on{background:#ffd54a}",
+    ".sl25-res{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:4px 0;font-weight:800;font-size:14px}",
+    ".sl25-net{display:inline-flex;align-items:center;gap:4px}",
+    ".cart27{align-items:center;gap:8px;flex-wrap:wrap}",
+    ".sl25-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px;margin:10px 0}",
+    ".sl25-card{background:#fffaf0;border:3px solid #2b1b22;border-radius:16px;padding:8px;text-align:center}",
+    ".sl25-card.sh{box-shadow:0 0 0 3px #ffb0e8 inset}",
+    ".sl25-card.unseen{opacity:.55}",
+    ".sl25-card b{font-size:13px;display:block}",
+    ".sl25-card small{font-size:11px;opacity:.8}"
+  ].join("");
+  document.head.appendChild(css);
+  const tabs = document.querySelector(".tabs");
+  if (tabs && !tabs.querySelector('[data-tab="slime"]')) {
+    const b = document.createElement("button");
+    b.type = "button"; b.dataset.tab = "slime"; b.setAttribute("data-i18n", "tab_slime");
+    b.textContent = tr("tab_slime");
+    tabs.appendChild(b);
+    b.addEventListener("click", () => { try { sfx.click(); } catch (e) {} homeTab = "slime"; renderHome(); });
+  }
+  try { if (save && save.started) { ensureCartMax27(); persist(); } } catch (e) {}
+  try {
+    if (window.__ADMIN__) {
+      window.__ADMIN__.cartLv = () => cartLv27();
+      window.__ADMIN__.ensureCart = ensureCartMax27;
+      window.__ADMIN__.v25 = () => V25();
+      window.__ADMIN__.forceCartDemo = function () {
+        if (!B) return { err: "no B" };
+        B.running = true; B.over = false;
+        if (!B.enemies) B.enemies = [];
+        if (!B.fx) B.fx = [];
+        if (!B.floaters) B.floaters = [];
+        B.enemies.push({ typ: "ember", lane: 2, x: 270, y: 400, hp: 8, max: 200, spd: 0, atk: 0, el: "火", fly: false, boss: false, reward: 1, slowT: 0, slowV: 1, stunT: 0, burnT: 0, burnD: 0, atkCd: 9, ph: 0, biting: false, hitT: 0 });
+        B.cartT27 = 0;
+        tickCart27(1);
+        for (const e of B.enemies) { if (e.netT25 > 0) { e.netT25 = 0; resolveNet25(e); } }
+        return { cartN: B.cartN27 | 0, farm: V25().farm.map(f => f.id), caught: Object.keys(V25().caught), fx: (B.fx || []).map(f => f.typ) };
+      };
+    }
+  } catch (e) {}
 })();
 
 })();
